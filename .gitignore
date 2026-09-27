@@ -3,3 +3,4 @@ work/
 output/
 __pycache__/
 *.pyc
+output_*/

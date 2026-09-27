@@ -93,13 +93,11 @@ NAME_MAP = {
     "saint": "st", "sainte": "st", "st": "st",
 }
 
-# Words that carry no identity (legal forms, articles). Removed for the "core" name.
+# Words that carry no identity (articles). Removed for the "core" name.
+# Legal forms are now handled safely at the end of the string via strip_suffix.
 NAME_STOP = {
-    "pvt", "ltd", "corp", "inc", "co", "llc", "llp", "lp", "plc", "pllc", "pc", "pa",
-    "sarl", "sas", "sasu", "eurl", "sa", "sci", "snc", "sca", "selarl", "scp", "scop",
-    "gmbh", "ag", "bv", "nv", "dba", "aka", "the", "and", "of", "a", "an", "de", "du",
+    "dba", "aka", "the", "and", "of", "a", "an", "de", "du",
     "des", "la", "le", "les", "l", "d", "en", "dr", "mr", "ms", "mrs", "m", "s",
-    "cie", "societe",
 }
 
 
@@ -119,12 +117,29 @@ def _merge_single_letters(toks):
     return out
 
 
+SUFFIXES = ['private limited', 'pvt ltd', 'pvt', 'limited', 'ltd', 'llc', 'inc',
+            'incorporated', 'corporation', 'corp', 'company', 'co', 'llp',
+            'gmbh', 'sarl', 'sas', 'sa', 'plc', 'group', 'holdings']
+SUFFIXES.sort(key=len, reverse=True)
+
+def strip_suffix(name_clean):
+    for suf in SUFFIXES:
+        if name_clean == suf:
+            return name_clean
+        if name_clean.endswith(' ' + suf):
+            return name_clean[: -len(suf)].strip()
+    return name_clean
+
 def normalize_name(raw: str):
     """Return (full_norm, core_norm) strings for a business name."""
     s = to_ascii_lower(raw)
     s = _NAME_NOISE.sub(" ", s)
     s = s.replace("&", " and ").replace("'s ", "s ").replace("'", "")
     s = _URL.sub(r" \1 ", s)
+    
+    # Strip legal suffix safely from the END of the string
+    s = strip_suffix(" ".join(s.split()))
+    
     toks = [t for t in _NON_ALNUM.split(s) if t]
     toks = _merge_single_letters(toks)
     toks = [NAME_MAP.get(t, t) for t in toks]

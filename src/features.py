@@ -10,6 +10,7 @@ import scipy.sparse as sp
 from rapidfuzz import fuzz, process
 from rapidfuzz.distance import JaroWinkler
 from sklearn.feature_extraction.text import HashingVectorizer
+import jellyfish
 
 from data import FLAG_EMPTY_ADDR, FLAG_NONASCII_NAME, FLAG_WEB_NAME
 
@@ -19,7 +20,7 @@ FEATURE_NAMES = [
     # blocking
     "blk_score", "blk_rank", "blk_score_rel",
     # names
-    "n_ratio", "n_tsort", "n_tset", "n_partial", "n_jw",
+    "n_ratio", "n_tsort", "n_tset", "n_partial", "n_jw", "n_phonetic_jacc", "n_acronym",
     "n_core_ratio", "n_core_tset", "n_join_ratio", "n_join_partial", "n_skel_ratio",
     "n_skel_tset", "n_idf_cos", "n_idf_cov1", "n_idf_cov2", "n_len1", "n_len2",
     "n_first_eq",
@@ -140,6 +141,40 @@ def _long_num(nums):
     return best
 
 
+def _phonetic_jaccard(n1, n2):
+    """Jaccard similarity of the metaphone codes of the first two tokens."""
+    out = np.zeros(len(n1), np.float32)
+    for k, (x, y) in enumerate(zip(n1, n2)):
+        if not x or not y:
+            continue
+        cx = {jellyfish.metaphone(t) for t in x.split()[:2] if len(t) >= 2}
+        cy = {jellyfish.metaphone(t) for t in y.split()[:2] if len(t) >= 2}
+        cx.discard("")
+        cy.discard("")
+        if cx and cy:
+            inter = len(cx & cy)
+            out[k] = inter / len(cx | cy)
+    return out
+
+
+def _acronym_eq(n1, n2):
+    """Check if the initials of one name exactly match the other name."""
+    out = np.zeros(len(n1), np.float32)
+    for k, (x, y) in enumerate(zip(n1, n2)):
+        if not x or not y:
+            continue
+        
+        x_init = "".join([w[0] for w in x.split() if w])
+        y_init = "".join([w[0] for w in y.split() if w])
+        
+        x_clean = x.replace(" ", "")
+        y_clean = y.replace(" ", "")
+        
+        if (len(x_init) >= 2 and x_init == y_clean) or (len(y_init) >= 2 and y_init == x_clean):
+            out[k] = 1.0
+    return out
+
+
 def _eq_or_missing(x, y):
     out = np.zeros(len(x), np.float32)
     for k, (a, c) in enumerate(zip(x, y)):
@@ -170,6 +205,8 @@ def compute_features(s1, b, cand, idf, pair_slice=None):
     X[:, col["n_partial"]] = _cp(nc1, nc2, fuzz.partial_ratio)
     X[:, col["n_jw"]] = process.cpdist(nc1, nc2, scorer=JaroWinkler.similarity,
                                        workers=-1, dtype=np.float32)
+    X[:, col["n_phonetic_jacc"]] = _phonetic_jaccard(nc1, nc2)
+    X[:, col["n_acronym"]] = _acronym_eq(nc1, nc2)
     X[:, col["n_core_ratio"]] = _cp(nc1, nc2, fuzz.ratio)
     X[:, col["n_core_tset"]] = _cp(nc1, nc2, fuzz.token_set_ratio)
     j1 = np.array([x.replace(" ", "") for x in nc1], dtype=object)
