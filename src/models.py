@@ -15,17 +15,17 @@ STAGE1_COLS = [i for i, f in enumerate(FEATURE_NAMES) if f not in STAGE1_EXCLUDE
 STAGE1_NAMES = [FEATURE_NAMES[i] for i in STAGE1_COLS]
 
 STAGE1_PARAMS = dict(
-    objective="binary", learning_rate=0.08, num_leaves=127, min_data_in_leaf=200,
+    objective="binary", learning_rate=0.06, num_leaves=255, min_data_in_leaf=150,
     feature_fraction=0.85, bagging_fraction=0.8, bagging_freq=1, lambda_l2=1.0,
     max_bin=255, verbose=-1,
 )
-STAGE1_ROUNDS = 500
+STAGE1_ROUNDS = 800
 STAGE2_PARAMS = dict(
-    objective="binary", learning_rate=0.05, num_leaves=63, min_data_in_leaf=200,
+    objective="binary", learning_rate=0.04, num_leaves=127, min_data_in_leaf=150,
     feature_fraction=0.9, bagging_fraction=0.8, bagging_freq=1, lambda_l2=1.0,
     verbose=-1,
 )
-STAGE2_ROUNDS = 400
+STAGE2_ROUNDS = 600
 
 
 def stage1_matrix(X, rows=None):

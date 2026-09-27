@@ -16,6 +16,7 @@ _MOJIBAKE = re.compile(r"[âÂ]\x80[\x90-\x9f]")          # broken en-dash etc.
 _NON_ALNUM = re.compile(r"[^a-z0-9]+")
 _VOWELS = re.compile(r"[aeiouy]")
 _REPEAT = re.compile(r"(.)\1+")
+_HARD_C = re.compile(r"c(?!h)")
 
 
 _INDIC = re.compile(r"[\u0900-\u0dff]")
@@ -46,6 +47,8 @@ def skeleton(tok: str) -> str:
     if not tok or tok.isdigit():
         return tok
     t = tok.replace("ph", "f").replace("ck", "k").replace("z", "s").replace("w", "v")
+    # hard c / q sound like k ("consultants" vs transliterated "konsltents")
+    t = _HARD_C.sub("k", t).replace("q", "k")
     t = _REPEAT.sub(r"\1", t)
     t = t[0] + _VOWELS.sub("", t[1:]) if len(t) > 1 else t
     t = t.replace("h", "") if len(t) > 2 else t
@@ -93,11 +96,13 @@ NAME_MAP = {
     "saint": "st", "sainte": "st", "st": "st",
 }
 
-# Words that carry no identity (articles). Removed for the "core" name.
-# Legal forms are now handled safely at the end of the string via strip_suffix.
+# Words that carry no identity (legal forms, articles). Removed for the "core" name.
 NAME_STOP = {
-    "dba", "aka", "the", "and", "of", "a", "an", "de", "du",
+    "pvt", "ltd", "corp", "inc", "co", "llc", "llp", "lp", "plc", "pllc", "pc", "pa",
+    "sarl", "sas", "sasu", "eurl", "sa", "sci", "snc", "sca", "selarl", "scp", "scop",
+    "gmbh", "ag", "bv", "nv", "dba", "aka", "the", "and", "of", "a", "an", "de", "du",
     "des", "la", "le", "les", "l", "d", "en", "dr", "mr", "ms", "mrs", "m", "s",
+    "cie", "societe",
 }
 
 
@@ -115,6 +120,18 @@ def _merge_single_letters(toks):
     if buf:
         out.append("".join(buf))
     return out
+
+
+_LEET = str.maketrans({"0": "o", "1": "l", "3": "e", "4": "a", "5": "s", "7": "t", "8": "b"})
+
+
+def _fix_leet(t):
+    """Typo digits inside words: 'po1yesters' -> 'polyesters', '5arl' -> 'sarl'.
+    Only for mostly-alphabetic tokens, so '3m' or 'b2b' stay as they are."""
+    if len(t) >= 4 and not t.isalpha() and not t.isdigit():
+        if sum(ch.isalpha() for ch in t) >= len(t) - 2:
+            return t.translate(_LEET)
+    return t
 
 
 SUFFIXES = ['private limited', 'pvt ltd', 'pvt', 'limited', 'ltd', 'llc', 'inc',
@@ -140,7 +157,7 @@ def normalize_name(raw: str):
     # Strip legal suffix safely from the END of the string
     s = strip_suffix(" ".join(s.split()))
     
-    toks = [t for t in _NON_ALNUM.split(s) if t]
+    toks = [_fix_leet(t) for t in _NON_ALNUM.split(s) if t]
     toks = _merge_single_letters(toks)
     toks = [NAME_MAP.get(t, t) for t in toks]
     full = " ".join(toks)

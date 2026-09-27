@@ -181,24 +181,31 @@ def main():
     del X1
 
     pos = 0
+    log("stage-1 prediction on all pairs (per country)...")
     for c, rows in where:
         d = C[c]
+        log(f"  [{c}] predicting stage 1 on {len(d['y']):,} pairs...")
         p1 = predict_stage1(models1, d["X"], n_jobs=args.n_jobs)
         p1[rows] = oof[pos:pos + len(rows)]
         pos += len(rows)
         d["p1"] = p1
+        log(f"  [{c}] stage-1 prediction done")
 
     # ---------------- stage 2 ----------------
+    log("building stage-2 features...")
     X2s, y2s = [], []
     for c in countries:
         d = C[c]
+        log(f"  [{c}] loading text for stage 2...")
         d["b_names"], d["b_addrs"] = load_b_text(cache, "train", c)
+        log(f"  [{c}] computing stage-2 context + features...")
         ctx = Stage2Context(d["cand"], d["p1"], d["n_s1"], d["n_b"])
         raw = extract_raw(d["X"])
         rows = np.nonzero(d["role"][d["cand"]["s1"]] == ROLE_TRAIN)[0]
         X2s.append(ctx.features(rows, raw, d["b_names"], d["b_addrs"]))
         y2s.append(d["y"][rows])
         del ctx, raw
+        log(f"  [{c}] stage-2 features done")
     X2, y2 = np.vstack(X2s), np.concatenate(y2s)
     del X2s
     log(f"stage 2: {len(y2):,} training pairs")

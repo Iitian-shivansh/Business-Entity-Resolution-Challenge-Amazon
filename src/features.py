@@ -35,6 +35,8 @@ FEATURE_NAMES = [
     "n_spec_n1", "n_spec_n2", "n_spec_inter", "n_spec_jacc", "n_spec_cov1",
     "a_spec_n1", "a_spec_n2", "a_spec_inter", "a_spec_jacc", "a_spec_cov1",
     "n_info1", "a_info1",
+    # cross / ratio features
+    "n_len_ratio", "a_len_ratio", "na_diff", "num_count_diff",
 ]
 SPEC_FRAC = 0.001
 N_FEAT = len(FEATURE_NAMES)
@@ -266,4 +268,20 @@ def compute_features(s1, b, cand, idf, pair_slice=None):
         X[:, col[pre + "_spec_cov1"]] = np.where(c1 > 0, inter / np.maximum(c1, 1), -1)
     X[:, col["n_info1"]] = idf.name1_info[i]
     X[:, col["a_info1"]] = idf.addr1_info[i]
+
+    # --- new cross / ratio features (near-zero compute cost) ---
+    n_l1 = np.array([max(len(x), 1) for x in nc1], np.float32)
+    n_l2 = np.array([max(len(x), 1) for x in nc2], np.float32)
+    X[:, col["n_len_ratio"]] = np.minimum(n_l1, n_l2) / np.maximum(n_l1, n_l2)
+
+    a_l1 = np.array([max(len(x), 1) for x in a1], np.float32)
+    a_l2 = np.array([max(len(x), 1) for x in a2], np.float32)
+    X[:, col["a_len_ratio"]] = np.minimum(a_l1, a_l2) / np.maximum(a_l1, a_l2)
+
+    X[:, col["na_diff"]] = X[:, col["n_tset"]] - X[:, col["a_tset"]]
+
+    nc1_count = np.array([len(x.split()) if x else 0 for x in nu1], np.float32)
+    nc2_count = np.array([len(x.split()) if x else 0 for x in nu2], np.float32)
+    X[:, col["num_count_diff"]] = np.abs(nc1_count - nc2_count)
+
     return X

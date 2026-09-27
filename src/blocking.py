@@ -14,6 +14,8 @@ import numpy as np
 import scipy.sparse as sp
 from sklearn.feature_extraction.text import HashingVectorizer
 
+import jellyfish
+
 from data import log
 from normalize import ADDR_GENERIC, skeleton
 
@@ -41,6 +43,23 @@ def blocking_keys(doc):
         for j in range(i + 1, len(first4)):
             a, b = sorted((first4[i], first4[j]))
             keys.append("p" + a + "_" + b)
+
+    # --- phonetic blocking keys (helps transliteration variants) ---
+    for t in ctoks[:4]:
+        if len(t) >= 3:
+            ph = jellyfish.metaphone(t)
+            if ph and len(ph) >= 2:
+                keys.append("m" + ph)
+
+    # Fuzzy keys built from 4-letter prefixes of the phonetic skeleton. They survive
+    # transliteration drift ("infrastructure" / "inphrastrkcr" -> "infr") and are made
+    # rare by pairing them with a second name prefix or with an address number.
+    pre = [t[:4] for t in nt[:3] if len(t) >= 3]
+    for i in range(len(pre)):
+        for j in range(i + 1, len(pre)):
+            a, b = sorted((pre[i], pre[j]))
+            keys.append("P" + a + "_" + b)
+
     toks = addr.split()
     words, nums, seen = [], [], set()
     for t in toks:
@@ -61,6 +80,10 @@ def blocking_keys(doc):
     if nums:
         for t in nt[:2]:
             keys.append("y" + t + "_" + nums[0])
+    # prefix x address-number combinations (from v2)
+    for n in nums[:3]:
+        for q in pre:
+            keys.append("q" + n + "_" + q)
     return keys
 
 
