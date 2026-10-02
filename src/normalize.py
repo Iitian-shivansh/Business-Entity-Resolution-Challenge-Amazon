@@ -134,29 +134,12 @@ def _fix_leet(t):
     return t
 
 
-SUFFIXES = ['private limited', 'pvt ltd', 'pvt', 'limited', 'ltd', 'llc', 'inc',
-            'incorporated', 'corporation', 'corp', 'company', 'co', 'llp',
-            'gmbh', 'sarl', 'sas', 'sa', 'plc', 'group', 'holdings']
-SUFFIXES.sort(key=len, reverse=True)
-
-def strip_suffix(name_clean):
-    for suf in SUFFIXES:
-        if name_clean == suf:
-            return name_clean
-        if name_clean.endswith(' ' + suf):
-            return name_clean[: -len(suf)].strip()
-    return name_clean
-
 def normalize_name(raw: str):
     """Return (full_norm, core_norm) strings for a business name."""
     s = to_ascii_lower(raw)
     s = _NAME_NOISE.sub(" ", s)
     s = s.replace("&", " and ").replace("'s ", "s ").replace("'", "")
     s = _URL.sub(r" \1 ", s)
-    
-    # Strip legal suffix safely from the END of the string
-    s = strip_suffix(" ".join(s.split()))
-    
     toks = [_fix_leet(t) for t in _NON_ALNUM.split(s) if t]
     toks = _merge_single_letters(toks)
     toks = [NAME_MAP.get(t, t) for t in toks]

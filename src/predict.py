@@ -77,7 +77,10 @@ def main():
                 # The model never saw this country. If it hands out more matches per
                 # S1 than it does on the training hold-out, it is over-confident here:
                 # raise the threshold (never lower it) until the rates agree.
-                target = rule["holdout_pred_per_s1"]
+                # compare with the TRUE number of matches per S1 in training: a new
+                # country generated the same way should not exceed it. (Comparing with
+                # the predicted rate over-penalised France, whose blocking is cleaner.)
+                target = rule.get("holdout_true_per_s1", rule["holdout_pred_per_s1"])
                 log(f"[{c}] unseen country: {sel.sum() / n_s1:.3f} matches/S1 at "
                     f"t={thr:.3f} (training hold-out: {target:.3f})")
                 while sel.sum() / n_s1 > target and thr < 0.995:

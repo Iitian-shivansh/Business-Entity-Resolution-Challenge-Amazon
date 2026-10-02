@@ -109,6 +109,49 @@ def transfer_check(args, C, H, countries, best_p1):
     return out
 
 
+def write_diagnostics(args, C, countries, gt, key, thr, min_top, exclusive, path,
+                      n_show=40):
+    """Human-readable error samples from the hold-out: blocking misses, wrong merges,
+    missed matches. Send this file back for the next round of improvements."""
+    from data import load_country_records
+    rng = np.random.default_rng(0)
+    lines = []
+    for c in countries:
+        d = C[c]
+        s1r, br = load_country_records(os.path.join(args.work_dir, "cache"), "train", c)
+        s1, b = d["cand"]["s1"], d["cand"]["b"].astype(np.int64)
+        sel = decode(s1, b, d[key], thr, exclusive=exclusive, min_top=min_top)
+        hold = d["role"][s1] == ROLE_HOLD
+
+        def txt(r, i):
+            return f"{r.name_core[i]} | {r.addr[i]}"
+
+        # 1) true matches blocking never retrieved
+        b_index = {e: i for i, e in enumerate(br.entity_id)}
+        cand_set = set(zip(s1[hold].tolist(), b[hold].tolist()))
+        ho = np.nonzero(d["role"] == ROLE_HOLD)[0]
+        miss = []
+        for i in rng.permutation(ho)[:20000]:
+            for m in gt.get(s1r.entity_id[i], "").split(","):
+                j = b_index.get(m)
+                if j is not None and (int(i), j) not in cand_set:
+                    miss.append((int(i), j))
+        lines.append(f"\n######## {c}: BLOCKING MISSES (true match never became a candidate)")
+        for i, j in miss[:n_show]:
+            lines.append(f"S1 {txt(s1r, i)}\n   MISSED {txt(br, j)}")
+        for title, mask in (("WRONG MERGES (predicted, not true)", sel & ~d["y"] & hold),
+                            ("MISSED MATCHES (candidate, true, not predicted)",
+                             ~sel & d["y"] & hold)):
+            idx = np.nonzero(mask)[0]
+            lines.append(f"\n######## {c}: {title}: {len(idx):,} in hold-out")
+            for k in rng.permutation(idx)[:n_show]:
+                lines.append(f"p={d[key][k]:.3f} rank={d['cand']['rank'][k]}\n"
+                             f"   S1 {txt(s1r, s1[k])}\n   B  {txt(br, b[k])}")
+        del s1r, br, b_index
+    open(path, "w", encoding="utf-8").write("\n".join(lines))
+    log(f"diagnostics written to {path}")
+
+
 def main():
     args = get_args("Train the entity-resolution matcher")
     t0 = time.time()
@@ -181,31 +224,24 @@ def main():
     del X1
 
     pos = 0
-    log("stage-1 prediction on all pairs (per country)...")
     for c, rows in where:
         d = C[c]
-        log(f"  [{c}] predicting stage 1 on {len(d['y']):,} pairs...")
         p1 = predict_stage1(models1, d["X"], n_jobs=args.n_jobs)
         p1[rows] = oof[pos:pos + len(rows)]
         pos += len(rows)
         d["p1"] = p1
-        log(f"  [{c}] stage-1 prediction done")
 
     # ---------------- stage 2 ----------------
-    log("building stage-2 features...")
     X2s, y2s = [], []
     for c in countries:
         d = C[c]
-        log(f"  [{c}] loading text for stage 2...")
         d["b_names"], d["b_addrs"] = load_b_text(cache, "train", c)
-        log(f"  [{c}] computing stage-2 context + features...")
         ctx = Stage2Context(d["cand"], d["p1"], d["n_s1"], d["n_b"])
         raw = extract_raw(d["X"])
         rows = np.nonzero(d["role"][d["cand"]["s1"]] == ROLE_TRAIN)[0]
         X2s.append(ctx.features(rows, raw, d["b_names"], d["b_addrs"]))
         y2s.append(d["y"][rows])
         del ctx, raw
-        log(f"  [{c}] stage-2 features done")
     X2, y2 = np.vstack(X2s), np.concatenate(y2s)
     del X2s
     log(f"stage 2: {len(y2):,} training pairs")
@@ -301,6 +337,8 @@ def main():
                     holdout_true_per_s1=true_per_s1, transfer_check=transfer)
     json.dump(decision, open(os.path.join(model_dir, "decision.json"), "w"), indent=2)
     log(f"saved decision rule: {decision}")
+    write_diagnostics(args, C, countries, gt, key, thr, min_top, exclusive,
+                      os.path.join(model_dir, "diagnostics.txt"))
     log(f"training finished in {(time.time() - t0) / 60:.1f} min")
 
 
