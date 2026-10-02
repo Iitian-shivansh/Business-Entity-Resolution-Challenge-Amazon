@@ -10,7 +10,6 @@ import scipy.sparse as sp
 from rapidfuzz import fuzz, process
 from rapidfuzz.distance import JaroWinkler
 from sklearn.feature_extraction.text import HashingVectorizer
-import jellyfish
 
 from data import FLAG_EMPTY_ADDR, FLAG_NONASCII_NAME, FLAG_WEB_NAME
 
@@ -20,7 +19,7 @@ FEATURE_NAMES = [
     # blocking
     "blk_score", "blk_rank", "blk_score_rel",
     # names
-    "n_ratio", "n_tsort", "n_tset", "n_partial", "n_jw", "n_phonetic_jacc", "n_acronym",
+    "n_ratio", "n_tsort", "n_tset", "n_partial", "n_jw",
     "n_core_ratio", "n_core_tset", "n_join_ratio", "n_join_partial", "n_skel_ratio",
     "n_skel_tset", "n_idf_cos", "n_idf_cov1", "n_idf_cov2", "n_len1", "n_len2",
     "n_first_eq",
@@ -35,8 +34,6 @@ FEATURE_NAMES = [
     "n_spec_n1", "n_spec_n2", "n_spec_inter", "n_spec_jacc", "n_spec_cov1",
     "a_spec_n1", "a_spec_n2", "a_spec_inter", "a_spec_jacc", "a_spec_cov1",
     "n_info1", "a_info1",
-    # cross / ratio features
-    "n_len_ratio", "a_len_ratio", "na_diff", "num_count_diff",
 ]
 SPEC_FRAC = 0.001
 N_FEAT = len(FEATURE_NAMES)
@@ -143,40 +140,6 @@ def _long_num(nums):
     return best
 
 
-def _phonetic_jaccard(n1, n2):
-    """Jaccard similarity of the metaphone codes of the first two tokens."""
-    out = np.zeros(len(n1), np.float32)
-    for k, (x, y) in enumerate(zip(n1, n2)):
-        if not x or not y:
-            continue
-        cx = {jellyfish.metaphone(t) for t in x.split()[:2] if len(t) >= 2}
-        cy = {jellyfish.metaphone(t) for t in y.split()[:2] if len(t) >= 2}
-        cx.discard("")
-        cy.discard("")
-        if cx and cy:
-            inter = len(cx & cy)
-            out[k] = inter / len(cx | cy)
-    return out
-
-
-def _acronym_eq(n1, n2):
-    """Check if the initials of one name exactly match the other name."""
-    out = np.zeros(len(n1), np.float32)
-    for k, (x, y) in enumerate(zip(n1, n2)):
-        if not x or not y:
-            continue
-        
-        x_init = "".join([w[0] for w in x.split() if w])
-        y_init = "".join([w[0] for w in y.split() if w])
-        
-        x_clean = x.replace(" ", "")
-        y_clean = y.replace(" ", "")
-        
-        if (len(x_init) >= 2 and x_init == y_clean) or (len(y_init) >= 2 and y_init == x_clean):
-            out[k] = 1.0
-    return out
-
-
 def _eq_or_missing(x, y):
     out = np.zeros(len(x), np.float32)
     for k, (a, c) in enumerate(zip(x, y)):
@@ -207,8 +170,6 @@ def compute_features(s1, b, cand, idf, pair_slice=None):
     X[:, col["n_partial"]] = _cp(nc1, nc2, fuzz.partial_ratio)
     X[:, col["n_jw"]] = process.cpdist(nc1, nc2, scorer=JaroWinkler.similarity,
                                        workers=-1, dtype=np.float32)
-    X[:, col["n_phonetic_jacc"]] = _phonetic_jaccard(nc1, nc2)
-    X[:, col["n_acronym"]] = _acronym_eq(nc1, nc2)
     X[:, col["n_core_ratio"]] = _cp(nc1, nc2, fuzz.ratio)
     X[:, col["n_core_tset"]] = _cp(nc1, nc2, fuzz.token_set_ratio)
     j1 = np.array([x.replace(" ", "") for x in nc1], dtype=object)
@@ -268,20 +229,4 @@ def compute_features(s1, b, cand, idf, pair_slice=None):
         X[:, col[pre + "_spec_cov1"]] = np.where(c1 > 0, inter / np.maximum(c1, 1), -1)
     X[:, col["n_info1"]] = idf.name1_info[i]
     X[:, col["a_info1"]] = idf.addr1_info[i]
-
-    # --- new cross / ratio features (near-zero compute cost) ---
-    n_l1 = np.array([max(len(x), 1) for x in nc1], np.float32)
-    n_l2 = np.array([max(len(x), 1) for x in nc2], np.float32)
-    X[:, col["n_len_ratio"]] = np.minimum(n_l1, n_l2) / np.maximum(n_l1, n_l2)
-
-    a_l1 = np.array([max(len(x), 1) for x in a1], np.float32)
-    a_l2 = np.array([max(len(x), 1) for x in a2], np.float32)
-    X[:, col["a_len_ratio"]] = np.minimum(a_l1, a_l2) / np.maximum(a_l1, a_l2)
-
-    X[:, col["na_diff"]] = X[:, col["n_tset"]] - X[:, col["a_tset"]]
-
-    nc1_count = np.array([len(x.split()) if x else 0 for x in nu1], np.float32)
-    nc2_count = np.array([len(x.split()) if x else 0 for x in nu2], np.float32)
-    X[:, col["num_count_diff"]] = np.abs(nc1_count - nc2_count)
-
     return X

@@ -9,8 +9,8 @@ DEFAULTS = dict(
     out_dir="output",
     n_jobs=4,                    # processes for normalisation / threads for LightGBM
     # blocking
-    top_k=30,                    # candidates kept per Source 1 record
-    df_cap=1000,                 # blocking keys shared by more records than this are ignored
+    top_k=40,                    # candidates kept per Source 1 record
+    df_cap=3000,                 # blocking keys shared by more records than this are ignored
     work_budget=30_000_000,      # max estimated sparse-product size per chunk (memory knob)
     feature_chunk=1_000_000,     # pairs per feature chunk (memory knob)
     # training
